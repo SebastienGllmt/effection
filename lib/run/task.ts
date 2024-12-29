@@ -6,6 +6,10 @@ import { action } from "../instructions.ts";
 
 import type { FrameResult } from "./types.ts";
 import { create } from "./create.ts";
+import { call } from "../call.ts";
+
+type ThenFulfilledType<T, Then=T> = ((value: T) => Then | Promise<Then>) | undefined | null;
+type CatchType<Catch=never> = ((reason: any) => Catch | Promise<Catch>) | undefined | null;
 
 export function createTask<T>(
   frame: Frame<T>,
@@ -32,7 +36,7 @@ export function createTask<T>(
     return promise;
   };
 
-  let task = create<Task<T>>("Task", {}, {
+  let task: Task<T> = create<Task<T>>("Task", {}, {
     *[Symbol.iterator]() {
       let frameResult = evaluate<FrameResult<T> | void>(() => frame);
       if (frameResult) {
@@ -44,13 +48,38 @@ export function createTask<T>(
         }
       } else {
         return yield* action<T>(function* (resolve, reject) {
-          awaitResult(resolve, reject);
+          getPromise().then(resolve, reject);
         });
       }
     },
-    then: (...args) => getPromise().then(...args),
-    catch: (...args) => getPromise().catch(...args),
-    finally: (...args) => getPromise().finally(...args),
+    then: async <Result1=T, Result2=never>(onfulfilled?: ThenFulfilledType<T, Result1>, onrejected?: CatchType<Result2>) => {
+      type NewResult = Result1 | Result2;
+      const newPromise = getPromise().then(onfulfilled, onrejected);
+      const future: Future<NewResult> = create<Future<NewResult>>("Future", {}, {
+        *[Symbol.iterator]() {
+          return yield* call(() => newPromise);
+        },
+        then: (...args) => newPromise.then(...args),
+        catch: (...args) => newPromise.catch(...args),
+        finally: (...args) => newPromise.finally(...args),
+      });
+      return await future;
+    },
+    catch: async (...args) => {
+      return await task.then(undefined, ...args);
+    },
+    finally: async (onfinally) => {
+      const newPromise = getPromise().finally(onfinally);
+      const future: Future<T> = create<Future<T>>("Future", {}, {
+        *[Symbol.iterator]() {
+          return yield* call(() => newPromise);
+        },
+        then: (...args) => newPromise.then(...args),
+        catch: (...args) => newPromise.catch(...args),
+        finally: (...args) => newPromise.finally(...args),
+      });
+      return await future;
+    },
     halt() {
       let haltPromise: Promise<void>;
       let getHaltPromise = () => {
@@ -71,7 +100,7 @@ export function createTask<T>(
           }
         });
       };
-      return create<Future<void>>("Future", {}, {
+      const future: Future<void> = create<Future<void>>("Future", {}, {
         *[Symbol.iterator]() {
           let result = evaluate<FrameResult<T> | void>(() => frame);
 
@@ -86,10 +115,37 @@ export function createTask<T>(
             });
           }
         },
-        then: (...args) => getHaltPromise().then(...args),
-        catch: (...args) => getHaltPromise().catch(...args),
-        finally: (...args) => getHaltPromise().finally(...args),
+        // then: (...args) => getHaltPromise().then(...args),
+        then: async <Result1=void, Result2=never>(onfulfilled?: ThenFulfilledType<void, Result1>, onrejected?: CatchType<Result2>) => {
+          type NewResult = Result1 | Result2;
+          const newPromise = getHaltPromise().then(onfulfilled, onrejected);
+          const future: Future<NewResult> = create<Future<NewResult>>("Future", {}, {
+            *[Symbol.iterator]() {
+              return yield* call(() => newPromise);
+            },
+            then: (...args) => newPromise.then(...args),
+            catch: (...args) => newPromise.catch(...args),
+            finally: (...args) => newPromise.finally(...args),
+          });
+          return await future;
+        },
+        catch: async (...args) => {
+          return await task.then(undefined, ...args);
+        },
+        finally: async (onfinally) => {
+          const newPromise = getHaltPromise().finally(onfinally);
+          const future: Future<void> = create<Future<void>>("Future", {}, {
+            *[Symbol.iterator]() {
+              return yield* call(() => newPromise);
+            },
+            then: (...args) => newPromise.then(...args),
+            catch: (...args) => newPromise.catch(...args),
+            finally: (...args) => newPromise.finally(...args),
+          });
+          return await future;
+        },
       });
+      return future;
     },
   });
   return task;

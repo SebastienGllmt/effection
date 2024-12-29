@@ -27,6 +27,24 @@ describe("run()", () => {
     expect(result).toEqual(67);
   });
 
+  it("can await a task 'then'", () => {
+    let result = run(function* () {
+      return yield* Promise.resolve(12);
+    });
+    const plusOne = result.then((value) => value + 1);
+    expect(plusOne).resolves.toEqual(13);
+  });
+
+  it("can yield a task 'then'", async () => {
+    let result = run(function* () {
+      return yield* Promise.resolve(12);
+    });
+    const plusOne = result.then((value) => value + 1);
+    await expect(run(function* () {
+      return yield* plusOne;
+    })).resolves.toEqual(13);
+  });
+
   it("rejects generator if subtask promise fails", async () => {
     let error = new Error("boom");
     let task = run(function* () {
