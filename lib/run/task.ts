@@ -115,7 +115,6 @@ export function createTask<T>(
             });
           }
         },
-        // then: (...args) => getHaltPromise().then(...args),
         then: async <Result1=void, Result2=never>(onfulfilled?: ThenFulfilledType<void, Result1>, onrejected?: CatchType<Result2>) => {
           type NewResult = Result1 | Result2;
           const newPromise = getHaltPromise().then(onfulfilled, onrejected);
